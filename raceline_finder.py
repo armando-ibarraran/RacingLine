@@ -2,7 +2,10 @@
 import geopandas as gpd
 from shapely.geometry import LineString
 import numpy as np
-from functions import project_and_center, densify_linestring, compute_track_border_lines, plot_racing_line
+from functions import project_and_center, densify_linestring, compute_track_border_lines, plot_racing_line, time_and_penalties
+
+import json
+import datetime
 
 
 def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_max, a_min, a_max, r_min, mu):
@@ -27,6 +30,9 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
 
     circuit_width : float
         Width of the track (in meters), used to construct track borders and valid cross-lines.
+
+    car_weight : float
+        Weight of the car (in kilograms), used to calculate maximum friction.
 
     v_max : float
         Maximum allowable velocity (in m/s) for the car.
@@ -101,63 +107,7 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
         Returns:
             float: Total lap time (seconds) + penalty term for constraint violations.
         """
-        assert len(x) == 2 * N - 1, "x must have N interpolation parameters and N-1 velocities"
-
-        # Split decision variables
-        interpolation_raw = x[:N]
-        velocity = x[N:]
-
-        # Sigmoid mapping to (0, 1)
-        interpolation = 1 / (1 + np.exp(-interpolation_raw))
-
-        # Interpolate positions across each cross-line
-        positions = []
-        for i in range(N):
-            t = interpolation[i]
-            pos = cross_lines[i].interpolate(t, normalized=True)
-            positions.append(pos)
-
-        total_time = 0.0
-        penalty = 0.0  # Accumulate soft penalties here
-
-        for i in range(N - 1):
-            dist = positions[i].distance(positions[i + 1])
-            v1 = velocity[i]
-
-            # --- 1. Velocity constraints ---
-            penalty += np.exp(2 * (-v1)) * 5 
-            penalty += np.exp(2 * (v1 - v_max)) * 5  
-
-            if i < N - 2:
-                # --- 2. Acceleration penalty (based on segment change) ---
-                v2 = velocity[i + 1]
-                next_dist = positions[i + 1].distance(positions[i + 2])
-                avg_dist = 0.5 * (dist + next_dist)
-                accel = (v2**2 - v1**2) / (2 * avg_dist)
-                penalty += np.exp(10 * (accel - a_max)) * 10
-                penalty += np.exp(10 * (a_min - accel)) * 10
-
-                # --- 3. Turning radius penalty (geometric limit) ---
-                p1, p2, p3 = positions[i], positions[i + 1], positions[i + 2]
-                a = p1.distance(p2)
-                b = p2.distance(p3)
-                c = p3.distance(p1)
-                s = 0.5 * (a + b + c)
-                area_sq = s * (s - a) * (s - b) * (s - c)
-                if area_sq <= 0: 
-                    radius = np.inf     # Handle collinear points
-                else:
-                    area = np.sqrt(area_sq)
-                    radius = (a * b * c) / (4 * area)
-                penalty += np.exp(2 * (r_min - radius)) * 20
-
-                # --- 4. Lateral acceleration limit (friction constraint) ---
-                lateral_accel = v1**2 / radius
-                penalty += np.exp(10 * (lateral_accel - max_lat)) * 10
-
-            # --- 5. Time contribution ---
-            total_time += dist / v1
-
+        total_time, penalty = time_and_penalties(x, cross_lines, v_max, a_min, a_max, r_min, max_lat)
         return total_time + penalty
 
 
@@ -172,26 +122,38 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
     # Initial guess
     x0 = np.ones(2 * N - 1)
     x0[:N] = 0.0      # Interpolation raw values (can be 0 or random)
-    x0[N:] = 10.0     # Initial guess for velocity in m/s (e.g., 35 km/h)
+    x0[N:] = 10.0     # Initial guess for velocity in m/s (e.g., 55 km/h)
     initial_value = f(x0)
     print("Initial guess:", initial_value)
+
 
     # Optimization
     result = minimize(
         fun=f,
         x0=x0,
         method='L-BFGS-B',
-        options={'maxiter': 500, 'disp': True}
+        options={'maxiter': 1000, 'disp': True}
     )
 
 
 
     # ====================================================================================================
-    # Plot
+    # Save and plot
     # ====================================================================================================
     # Reconstruct optimized positions
     x_opt = result.x
-    plot_racing_line(x_opt, circuit_name, N, cross_lines, densified_line, left_border_line, right_border_line)
 
+    
+    # Save solution
+    
+    total_time, penalty = time_and_penalties(x_opt, cross_lines, v_max, a_min, a_max, r_min, max_lat)
+    data = {"point": x_opt.tolist(), "total_time": total_time, "penalty": penalty}
+    now = datetime.datetime.now()
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+    with open(f"./solutions/{circuit_name.strip().lower().replace(' ', '_')}_{timestamp}_solution.json", "w") as final:
+        json.dump(data, final)
+
+    # Plot
+    plot_racing_line(x_opt, circuit_name, total_time, N, cross_lines, densified_line, left_border_line, right_border_line)
 
     return x_opt
