@@ -2,7 +2,8 @@
 import geopandas as gpd
 from shapely.geometry import LineString
 import numpy as np
-from functions import project_and_center, densify_linestring, compute_track_border_lines, plot_racing_line, time_and_penalties
+from optimization_functions import rcBFGSLiMem
+from extra_functions import project_and_center, densify_linestring, compute_track_border_lines, plot_racing_line, time_and_penalties
 
 import json
 import datetime
@@ -89,11 +90,7 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
     # ====================================================================================================
     # Define decision variables and objective function
     # ====================================================================================================
-    # Decision Variables:
-    # - N raw interpolation parameters (one per cross-line) — first N elements
-    # - N-1 velocity magnitudes (one per segment between positions) — last N-1 elements
     N = len(cross_lines)
-    x0 = np.ones(2 * N - 1)*0.5  # [interpolations (raw, R), velocities (>0)]
 
     # Objective function to minimize
     def f(x):
@@ -115,25 +112,18 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
     # ====================================================================================================
     # Optimice
     # ====================================================================================================
-    from scipy.optimize import minimize
-
+    # Decision Variables:
+    # - N raw interpolation parameters (one per cross-line) — first N elements
+    # - N-1 velocity magnitudes (one per segment between positions) — last N-1 elements
     N = len(cross_lines)
-
-    # Initial guess
-    x0 = np.ones(2 * N - 1)
+    x0 = np.ones(2 * N - 1)     # Initial guess
     x0[:N] = 0.0      # Interpolation raw values (can be 0 or random)
-    x0[N:] = 10.0     # Initial guess for velocity in m/s (e.g., 55 km/h)
+    x0[N:] =10.0     # Initial guess for velocity in m/s (e.g., 35 km/h)
     initial_value = f(x0)
     print("Initial guess:", initial_value)
 
-
     # Optimization
-    result = minimize(
-        fun=f,
-        x0=x0,
-        method='L-BFGS-B',
-        options={'maxiter': 1000, 'disp': True}
-    )
+    result, _  = rcBFGSLiMem(f, x0, 100 , 5, tol=1e-5, eta=0.1, Delta_max=100.0)
 
 
 
@@ -141,11 +131,10 @@ def get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_m
     # Save and plot
     # ====================================================================================================
     # Reconstruct optimized positions
-    x_opt = result.x
+    x_opt = result
 
     
     # Save solution
-    
     total_time, penalty = time_and_penalties(x_opt, cross_lines, v_max, a_min, a_max, r_min, max_lat)
     data = {"point": x_opt.tolist(), "total_time": total_time, "penalty": penalty}
     now = datetime.datetime.now()

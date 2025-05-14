@@ -301,3 +301,6 @@ def time_and_penalties(x, cross_lines, v_max, a_min, a_max, r_min, max_lat):
         total_time += dist / v1
 
     return total_time, penalty
+
+
+

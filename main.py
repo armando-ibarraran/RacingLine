@@ -13,8 +13,9 @@ a_max = 10.0  # in m/s^2
 r_min = 10.0  # in meters
 mu = 1.7
 
+print(f'Optimizing over {circuit_name}')
 x_opt = get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_max, a_min, a_max, r_min, mu)
-
+print()
 
 
 # ====================================================================================================
@@ -30,7 +31,9 @@ a_max = 10.0  # in m/s^2
 r_min = 10.0  # in meters
 mu = 1.7
 
+print(f'Optimizing over {circuit_name}')
 x_opt = get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_max, a_min, a_max, r_min, mu)
+print()
 
 
 
@@ -47,7 +50,9 @@ a_max = 10.0  # in m/s^2
 r_min = 10.0  # in meters
 mu = 1.7
 
+print(f'Optimizing over {circuit_name}')
 x_opt = get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_max, a_min, a_max, r_min, mu)
+print()
 
 
 
@@ -64,4 +69,6 @@ a_max = 10.0  # in m/s^2
 r_min = 10.0  # in meters
 mu = 1.7
 
+print(f'Optimizing over {circuit_name}')
 x_opt = get_raceline(geojson_path, circuit_name, circuit_density, circuit_width, v_max, a_min, a_max, r_min, mu)
+print()
